@@ -77,6 +77,43 @@ function rotate_point(cx, cy, angle, px, py)
 	return {x=px, y=py}
 end
 
+local buffer_index = 1
+local prev_sprite_angle = -1
+local frame_buffer = {}
+
+function step_frame_buffer()
+	-- Draw SpriteStack:
+	local sprite_angle_rad = math.rad(ssprite_angle)
+
+	-- Height divide control
+	local height_modify = 1.0
+	local size_modify = 1
+	if dialog.data["check_divy"] then height_modify = 0.5 end
+	if dialog.data["check_double_size"] then size_modify = 2 end
+	
+	local rotatedSpriteImageRect 	= Rectangle(0, 0, rotatedBufferImage.width, rotatedBufferImage.height)
+	local rotatedImageDisplayWidth 	= rotatedBufferImage.width * size_modify
+	local rotatedImageDisplayHeight = rotatedBufferImage.height * size_modify * height_modify
+	local position_x 				= canvas_w/2 - rotatedImageDisplayWidth/2 + dialog.data["slider_shift_x"]
+	local position_y 				= canvas_h/2 - rotatedImageDisplayHeight/2 * height_modify + dialog.data["slider_shift_y"]
+	
+	local sprite_slice_depth = 0
+	if dialog.data["check_solid_zsteps"] then sprite_slice_depth = size_modify * sprite_fakez_distance end
+
+	if buffer_index > #sprite.frames then
+		buffer_index = 1
+		dialog:repaint()
+	end
+	
+	-- Draw Sprite to Buffer Image
+	bufferImage:drawSprite(sprite, buffer_index)
+
+	-- Draw rotated pixels from Buffer Image to Rotate Image (Buffer2)
+	rotate_pixels(bufferImage, frame_buffer[buffer_index], sprite_angle_rad)
+
+	buffer_index = buffer_index + 1
+end
+
 -- Rotate Pixels from ImageA to ImageB
 function rotate_pixels(image_a, image_b, angle_radians)
 	local pivotx = image_b.width / 2
@@ -121,12 +158,16 @@ function setup_spritestack()
 		rotatedBufferImage:resize( target_widthheight, target_widthheight )
 	end
 
+	-- Allocate buffers for each layer (frame)
+	frame_buffer = {}
+	for i,frame in ipairs(sprite.frames) do
+		table.insert(frame_buffer, Image(target_widthheight, target_widthheight, ColorMode.RGB))
+	end
+
 	-- update dialog elements
 	if dialog.data["slider_frame"] ~= nil then
 		dialog:modify{id="slider_frame", max = #sprite.frames, value = app.frame }
 	end
-	
-	dialog:repaint()
 end
 
 -- Start
@@ -157,7 +198,6 @@ dialog
 			ssprite_angle = math.floor(ssprite_angle)
 
 			dialog:modify{ id = "slider_angle", value = ssprite_angle }
-			dialog:repaint()
 		end
 	end,
 	-- When releasing left mouse button
@@ -228,9 +268,25 @@ dialog
 			local frame_index = app.frame.frameNumber -- dialog.data["slider_frame"]
 			draw_sprite_on_canvas(frame_index)
 		else
-			-- Each FRAME draw ...
-			for i,frame in ipairs(sprite.frames) do
-				draw_sprite_on_canvas(i)
+			if async_rendering_timer.isRunning then
+				-- Copy frame buffer onto canvas
+				for i,frame in ipairs(sprite.frames) do
+					for j=sprite_slice_depth, 0, -1 do 
+						gc:drawImage(
+							frame_buffer[i], 
+							rotatedSpriteImageRect, 
+							Rectangle(
+								position_x, 
+								position_y - i*size_modify*sprite_fakez_distance + j, 
+								rotatedImageDisplayWidth, 
+								rotatedImageDisplayHeight))
+					end
+				end
+			else
+				-- Each FRAME draw ...
+				for i,frame in ipairs(sprite.frames) do
+					draw_sprite_on_canvas(i)
+				end
 			end
 		end
 	end
@@ -375,8 +431,23 @@ dialog
 :check{ id="check_auto_repaint",
 	text="Auto-Repaint",
 	selected=false,
-	onclick=function()
-	end }
+	onclick=function(v)
+		if dialog.data["check_auto_repaint"] == true then
+			async_rendering_timer:start()
+		else
+			async_rendering_timer:stop()
+		end
+	end
+}
+
+-- Async rendering timer
+async_rendering_timer =
+Timer{
+	interval=0.0,
+	ontick = function()
+		step_frame_buffer()
+	end
+}
 dialog
 :button{
 	id = "button_update",
@@ -399,7 +470,7 @@ dialog
 -- Rotation Animation Timer
 angle_animation_timer =
 Timer{
-	interval=1.0/360.0,
+	interval=1.0/15.0,
 	ontick = function()
 		ssprite_angle = math.fmod(ssprite_angle + 1 + 360, 360)
 		dialog:modify{id="slider_angle", value = ssprite_angle}
