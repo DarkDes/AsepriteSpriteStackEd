@@ -1,5 +1,6 @@
 ----------------------------------------------------------------------
 -- Sprite Stack Viewer by DarkDes
+-- v030 -- 06 12 2023, Add buffered auto repaint option. Modification by KarlTheCool
 -- v021 -- 06 08 2023
 -- v020 -- 29 07 2023
 -- v015 -- 28 07 2023
@@ -42,6 +43,7 @@ end
 -- DIALOG OBJECT
 local dialog = Dialog{title = "SpriteStack Previewer", onclose=events_off}
 local mouse = {position = Point(0, 0), drag_position = Point(0,0), leftClick = false}
+local mouse_right = { delta = Point(0,0), position = Point(0,0), click = false }
 
 -- Global & Constants
 local canvas_w = 128
@@ -60,6 +62,7 @@ local sprite_fill_distance_slices = true
 local bufferImage = Image(1, 1, ColorMode.RGB) -- Contains a image of frame (Sprite)
 local rotatedBufferImage = Image(1, 1, ColorMode.RGB) -- Contains a rotated image of Sprite (bufferImage)
 
+local redraw_required = true
 
 -- Rotate point(px,py) around pivot point(cx, cy) by angle.
 function rotate_point(cx, cy, angle, px, py)
@@ -187,6 +190,8 @@ dialog
 		mouse.leftClick = ev.button == MouseButton.LEFT
 		mouse.drag_position = Point(ev.x, ev.y)
 		mouse.old_angle = ssprite_angle
+
+		if ev.button == MouseButton.RIGHT then mouse_right.position = Point(ev.x, ev.y) end
 	end,
 	-- Update the mouse position
 	onmousemove = function(ev)
@@ -199,10 +204,30 @@ dialog
 
 			dialog:modify{ id = "slider_angle", value = ssprite_angle }
 		end
+		
+		-- Mouse Right Button, change sprite offset x,y
+		if ev.button == MouseButton.RIGHT then
+			mouse_right.delta.x = ev.x - mouse_right.position.x
+			mouse_right.delta.y = ev.y - mouse_right.position.y
+			mouse_right.position.x = ev.x
+			mouse_right.position.y = ev.y
+			
+			local px = dialog.data["slider_shift_x"] + mouse_right.delta.x
+			local py = dialog.data["slider_shift_y"] + mouse_right.delta.y
+			if px < -canvas_w/2 then px = -canvas_w/2 elseif px > canvas_w/2 then px = canvas_w/2 end
+			if py < -canvas_h/2 then py = -canvas_h/2 elseif py > canvas_h/2 then py = canvas_h/2 end
+			
+			dialog:modify{ id = "slider_shift_x", value = px }
+			dialog:modify{ id = "slider_shift_y", value = py }
+			-- redraw_required = true
+			dialog:repaint()
+		end
 	end,
 	-- When releasing left mouse button
 	onmouseup = function(ev)
-		mouse.leftClick = false
+		if ev.button == MouseButton.LEFT then
+			mouse.leftClick = false
+		end
 	end,
 	
 	-- Redraw function
