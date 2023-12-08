@@ -32,6 +32,7 @@ function ev_dialog_repaint(ev)
 	end
 end
 
+-- On close dialog
 function events_off()
 	app.events:off(ev_sitechange_on)
 	app.events:off(ev_dialog_repaint)
@@ -48,6 +49,11 @@ local mouse_right = { delta = Point(0,0), position = Point(0,0), click = false }
 -- Global & Constants
 local canvas_w = 128
 local canvas_h = 128
+
+local shift_min_x = -canvas_w/2
+local shift_min_y = -canvas_h/2
+local shift_max_x = canvas_w/2
+local shift_max_y = canvas_h/2
 
 local spritestack = {}
 local settings = {} -- same as dialog.data ?
@@ -214,8 +220,8 @@ dialog
 			
 			local px = dialog.data["slider_shift_x"] + mouse_right.delta.x
 			local py = dialog.data["slider_shift_y"] + mouse_right.delta.y
-			if px < -canvas_w/2 then px = -canvas_w/2 elseif px > canvas_w/2 then px = canvas_w/2 end
-			if py < -canvas_h/2 then py = -canvas_h/2 elseif py > canvas_h/2 then py = canvas_h/2 end
+			if px < shift_min_x then px = shift_min_x elseif px > shift_max_x then px = shift_max_x end
+			if py < shift_min_y then py = shift_min_y elseif py > shift_max_y then py = shift_max_y end
 			
 			dialog:modify{ id = "slider_shift_x", value = px }
 			dialog:modify{ id = "slider_shift_y", value = py }
@@ -227,6 +233,13 @@ dialog
 	onmouseup = function(ev)
 		if ev.button == MouseButton.LEFT then
 			mouse.leftClick = false
+		end
+	end,
+	-- Mouse Wheel. "Let's roll!"
+	onwheel = function(ev)
+		if ev.deltaY ~= 0 then
+			dialog:modify{ id="size_zoom", value = dialog.data["size_zoom"] + ev.deltaY }
+			zoom_changed()
 		end
 	end,
 	
@@ -261,9 +274,8 @@ dialog
 
 		-- Height divide control
 		local height_modify = 1.0
-		local size_modify = 1
+		local size_modify = get_zoomed_scale()
 		if dialog.data["check_divy"] then height_modify = 0.5 end
-		if dialog.data["check_double_size"] then size_modify = 2 end
 		
 		local rotatedSpriteImageRect 	= Rectangle(0, 0, rotatedBufferImage.width, rotatedBufferImage.height)
 		local rotatedImageDisplayWidth 	= rotatedBufferImage.width * size_modify
@@ -316,6 +328,30 @@ dialog
 		end
 	end
 }
+
+-- Get calculated size of Sprite with zoom
+function get_zoomed_scale()
+	local size_modify = 1
+	if dialog.data["check_double_size"] then size_modify = 2 end
+	return size_modify * dialog.data["size_zoom"]/10.0
+end
+
+-- Called when Zoom\Size\Scale changed
+function zoom_changed()
+	local size_modify = get_zoomed_scale()
+	shift_min_x = (-canvas_w/2) * size_modify
+	shift_min_y = (-canvas_h/2) * size_modify
+	shift_max_x = ( canvas_w/2) * size_modify
+	shift_max_y = ( canvas_h/2) * size_modify
+	
+	local val_x = dialog.data["slider_shift_x"] --* w/prev_w
+	local val_y = dialog.data["slider_shift_y"] --* h/prev_h
+	
+	dialog:modify{id="slider_shift_x", 	min = shift_min_x, max = shift_max_x, value = val_x }
+	dialog:modify{id="slider_shift_y", 	min = shift_min_y, max = shift_max_y, value = val_y }
+	dialog:repaint()
+end
+
 -- UI Elements Declaration
 dialog
 :separator{
@@ -413,10 +449,21 @@ dialog
 :check{ id="check_double_size",
 	text="Double Size",
 	selected=false,
-	onclick=function()
-		dialog:repaint()
-	end }
-	
+	onclick = zoom_changed
+}
+dialog
+:label{
+	id = "zoom_label",
+	text = "Zoom (x0.1):"
+}
+dialog
+:slider{
+	id = "size_zoom",
+	min = 01,
+	max = 40,
+	value = 10,
+	onchange = zoom_changed
+}
 dialog
 :separator{
 	id = "sep_shift",
