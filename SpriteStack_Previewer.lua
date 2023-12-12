@@ -179,6 +179,8 @@ function setup_spritestack()
 	if dialog.data["slider_frame"] ~= nil then
 		dialog:modify{id="slider_frame", max = #sprite.frames, value = app.frame }
 	end
+	
+	dialog:repaint()
 end
 
 -- Start
@@ -190,8 +192,8 @@ dialog
 	id = "canvas",
 	width = canvas_w,
 	height = canvas_h,
-	hexpand = false,
-	vexpand = false,
+	hexpand = true,
+	vexpand = true,
 	
 	-- Update information about left mouse button being pressed
 	onmousedown = function(ev)
@@ -249,6 +251,15 @@ dialog
 	onpaint = function(ev)
 		local gc = ev.context
 		
+		-- Canvas size changed
+		local size_changing = false
+		if gc.width ~= canvas_w or gc.height ~= canvas_h then
+			canvas_w = gc.width
+			canvas_h = gc.height
+			size_changing = true
+			zoom_changed()
+		end
+		
 		-- Draw RoundRect Zone
 		local canvas_round_rect = Rectangle(0, 0, canvas_w, canvas_h)
 		gc.color = Color(255, 255, 255, 255)
@@ -262,7 +273,7 @@ dialog
 		local colors = {color_a, color_b}
 		local size = 16
 		for i=0, canvas_w/size, 1 do
-			for j=0, canvas_w/size, 1 do
+			for j=0, canvas_h/size, 1 do
 				gc.color = colors[(i+j)%2 + 1]
 				gc:fillRect(Rectangle(i * size, j*size, size, size))
 			end
@@ -301,7 +312,7 @@ dialog
 				gc:drawImage(rotatedBufferImage, rotatedSpriteImageRect, Rectangle(position_x, position_y - frame_index*size_modify*sprite_fakez_distance + j, rotatedImageDisplayWidth, rotatedImageDisplayHeight))
 			end
 		end
-		
+		if size_changing == false then
 		-- Draw one Slice (Frame)
 		if dialog.data["check_only_one_slice"] then
 			local frame_index = app.frame.frameNumber -- dialog.data["slider_frame"]
@@ -328,6 +339,7 @@ dialog
 				end
 			end
 		end
+		end -- size_changing
 	end
 }
 
