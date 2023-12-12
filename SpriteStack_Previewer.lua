@@ -60,6 +60,8 @@ local settings = {} -- same as dialog.data ?
 
 local sprite = nil
 local ssprite_angle = 0
+local sprite_rotate_animation_interval = 1.0/15.0
+local sprite_angle_speed = 15.0 * sprite_rotate_animation_interval -- angle per second
 
 local sprite_fakez_distance = 1
 local sprite_fill_distance_slices = true
@@ -381,8 +383,22 @@ dialog
 		else
 			angle_animation_timer:stop()
 		end
+		dialog:modify{id="rotation_animation_aps", enabled = dialog.data["check_auto_angle"]}
 	end
 }
+-- Slider: Rotation Animation. Change angles per second
+dialog
+:slider{
+	id = "rotation_animation_aps",
+	min = 01,
+	max = 360,
+	value = 15,
+	enabled = false,
+	onchange = function()
+		sprite_angle_speed = dialog.data["rotation_animation_aps"] * sprite_rotate_animation_interval
+	end
+}
+
 dialog
 :separator{
 	id = "sep_slice",
@@ -542,9 +558,9 @@ dialog
 -- Rotation Animation Timer
 angle_animation_timer =
 Timer{
-	interval=1.0/15.0,
+	interval = sprite_rotate_animation_interval,
 	ontick = function()
-		ssprite_angle = math.fmod(ssprite_angle + 1 + 360, 360)
+		ssprite_angle = math.fmod(ssprite_angle + sprite_angle_speed + 360, 360)
 		dialog:modify{id="slider_angle", value = ssprite_angle}
 		dialog:repaint()
 	end}
