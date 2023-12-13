@@ -268,8 +268,9 @@ dialog
 		gc:clip()
 		
 		-- Background Grid
-		local color_a = Color{gray=180, alpha=255} -- 0x3e3546
-		local color_b = Color{gray=150, alpha=255} -- 0x625565
+		local docPref = app.preferences.document(sprite)
+		local color_a = docPref.bg.color1
+		local color_b = docPref.bg.color2
 		local colors = {color_a, color_b}
 		local size = 16
 		for i=0, canvas_w/size, 1 do
