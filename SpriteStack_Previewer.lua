@@ -1,5 +1,8 @@
 ----------------------------------------------------------------------
 -- Sprite Stack Viewer by DarkDes
+
+-- v036 -- 13 12 2023, Clean up code 1, sprite change angle func.
+-- v035 -- 13 12 2023, Feature requests #1: Offset+drag, Zoom, Rotation speed, Preview size
 -- v030 -- 06 12 2023, Add buffered auto repaint option. Modification by KarlTheCool
 -- v021 -- 06 08 2023
 -- v020 -- 29 07 2023
@@ -55,11 +58,9 @@ local shift_min_y = -canvas_h/2
 local shift_max_x = canvas_w/2
 local shift_max_y = canvas_h/2
 
-local spritestack = {}
-local settings = {} -- same as dialog.data ?
-
 local sprite = nil
-local ssprite_angle = 0
+local sprite_angle_deg = 0 -- angle in degrees
+local sprite_angle_rad = 0 -- angle in radians
 local sprite_rotate_animation_interval = 1.0/15.0
 local sprite_angle_speed = 15.0 * sprite_rotate_animation_interval -- angle per second
 
@@ -89,28 +90,11 @@ function rotate_point(cx, cy, angle, px, py)
 end
 
 local buffer_index = 1
-local prev_sprite_angle = -1
 local frame_buffer = {}
 
 function step_frame_buffer()
 	-- Draw SpriteStack:
-	local sprite_angle_rad = math.rad(ssprite_angle)
-
-	-- Height divide control
-	local height_modify = 1.0
-	local size_modify = 1
-	if dialog.data["check_divy"] then height_modify = 0.5 end
-	if dialog.data["check_double_size"] then size_modify = 2 end
 	
-	local rotatedSpriteImageRect 	= Rectangle(0, 0, rotatedBufferImage.width, rotatedBufferImage.height)
-	local rotatedImageDisplayWidth 	= rotatedBufferImage.width * size_modify
-	local rotatedImageDisplayHeight = rotatedBufferImage.height * size_modify * height_modify
-	local position_x 				= canvas_w/2 - rotatedImageDisplayWidth/2 + dialog.data["slider_shift_x"]
-	local position_y 				= canvas_h/2 - rotatedImageDisplayHeight/2 * height_modify + dialog.data["slider_shift_y"]
-	
-	local sprite_slice_depth = 0
-	if dialog.data["check_solid_zsteps"] then sprite_slice_depth = size_modify * sprite_fakez_distance end
-
 	if buffer_index > #sprite.frames then
 		buffer_index = 1
 		dialog:repaint()
@@ -199,7 +183,7 @@ dialog
 	onmousedown = function(ev)
 		mouse.leftClick = ev.button == MouseButton.LEFT
 		mouse.drag_position = Point(ev.x, ev.y)
-		mouse.old_angle = ssprite_angle
+		mouse.old_angle = sprite_angle_deg
 
 		if ev.button == MouseButton.RIGHT then mouse_right.position = Point(ev.x, ev.y) end
 	end,
@@ -208,11 +192,7 @@ dialog
 		mouse.position = Point(ev.x, ev.y)
 		if mouse.leftClick then
 			-- New angle value
-			ssprite_angle = mouse.old_angle + 360*(mouse.position.x- mouse.drag_position.x)/canvas_w
-			ssprite_angle = math.fmod(ssprite_angle+360, 360)
-			ssprite_angle = math.floor(ssprite_angle)
-
-			dialog:modify{ id = "slider_angle", value = ssprite_angle }
+			change_sprite_angle( mouse.old_angle + 360*(mouse.position.x - mouse.drag_position.x)/canvas_w )
 		end
 		
 		-- Mouse Right Button, change sprite offset x,y
@@ -224,12 +204,9 @@ dialog
 			
 			local px = dialog.data["slider_shift_x"] + mouse_right.delta.x
 			local py = dialog.data["slider_shift_y"] + mouse_right.delta.y
-			if px < shift_min_x then px = shift_min_x elseif px > shift_max_x then px = shift_max_x end
-			if py < shift_min_y then py = shift_min_y elseif py > shift_max_y then py = shift_max_y end
-			
 			dialog:modify{ id = "slider_shift_x", value = px }
 			dialog:modify{ id = "slider_shift_y", value = py }
-			-- redraw_required = true
+
 			dialog:repaint()
 		end
 	end,
@@ -284,8 +261,6 @@ dialog
 		-- End Draw RoundRect Zone
 		
 		-- Draw SpriteStack:
-		local sprite_angle_rad = math.rad(ssprite_angle)
-
 		-- Height divide control
 		local height_modify = 1.0
 		local size_modify = get_zoomed_scale()
@@ -367,6 +342,14 @@ function zoom_changed()
 	dialog:repaint()
 end
 
+-- Change Sprite angle
+function change_sprite_angle( angle_deg )
+	sprite_angle_deg = math.floor(math.fmod(angle_deg + 360, 360))
+	sprite_angle_rad = math.rad(sprite_angle_deg)
+	dialog:modify{ id = "slider_angle", value = sprite_angle_deg }
+	-- dialog:repaint()
+end
+
 -- UI Elements Declaration
 dialog
 :separator{
@@ -380,9 +363,8 @@ dialog
     max = 360,
     value = 0,
     visible = true,
-    onchange = function() 
-		ssprite_angle = dialog.data["slider_angle"]
-		--sprite_cache_angle_sprite(ssprite_angle)
+    onchange = function()
+		change_sprite_angle(dialog.data["slider_angle"])
 		dialog:repaint()
 	end
 }
@@ -518,11 +500,7 @@ dialog
 		dialog:repaint()
 	end
 }
--- dialog
--- :separator{
-	-- id = "sep_visualize",
-	-- text = "Auto-Update"
--- }
+
 dialog
 :separator{
 	id = "sep_update",
@@ -573,8 +551,7 @@ angle_animation_timer =
 Timer{
 	interval = sprite_rotate_animation_interval,
 	ontick = function()
-		ssprite_angle = math.fmod(ssprite_angle + sprite_angle_speed + 360, 360)
-		dialog:modify{id="slider_angle", value = ssprite_angle}
+		change_sprite_angle(sprite_angle_deg + sprite_angle_speed)
 		dialog:repaint()
 	end}
 -- End Rotation Timer
@@ -594,8 +571,6 @@ function ev_sitechange_on(ev)
 		oldSprite = app.sprite
 	end
 end
-
-
 
 function events_on()
 	app.events:on('sitechange', ev_sitechange_on)
