@@ -1,6 +1,7 @@
 ----------------------------------------------------------------------
 -- Sprite Stack Viewer by DarkDes
 
+-- v037 -- 17 12 2023, Bugfixes: minor fixes, home tab error, change frames count
 -- v036 -- 13 12 2023, Clean up code 1, sprite change angle func.
 -- v035 -- 13 12 2023, Feature requests #1: Offset+drag, Zoom, Rotation speed, Preview size
 -- v030 -- 06 12 2023, Add buffered auto repaint option. Modification by KarlTheCool
@@ -39,8 +40,16 @@ end
 function events_off()
 	app.events:off(ev_sitechange_on)
 	app.events:off(ev_dialog_repaint)
-	app.sprite.events:off(ev_dialog_repaint)
+	if app.sprite ~= nil then
+		app.sprite.events:off(ev_dialog_repaint)
+	end
+	if sprite ~= nil then
+		sprite.events:off(ev_dialog_repaint)
+	end
 	--print("off")
+	
+	angle_animation_timer:stop()
+	async_rendering_timer:stop()
 end
 -- End EVENTS pt1
 
@@ -70,6 +79,7 @@ local sprite_fill_distance_slices = true
 -- Images 
 local bufferImage = Image(1, 1, ColorMode.RGB) -- Contains a image of frame (Sprite)
 local rotatedBufferImage = Image(1, 1, ColorMode.RGB) -- Contains a rotated image of Sprite (bufferImage)
+local target_widthheight = 1
 
 local redraw_required = true
 
@@ -89,13 +99,18 @@ function rotate_point(cx, cy, angle, px, py)
 	return {x=px, y=py}
 end
 
+local sprite_frames_cached_count = 1
 local buffer_index = 1
 local frame_buffer = {}
 
 function step_frame_buffer()
 	-- Draw SpriteStack:
+	if sprite == nil then
+		return
+	end
 	
-	if buffer_index > #sprite.frames then
+	-- if buffer_index > #sprite.frames then
+	if buffer_index > sprite_frames_cached_count then
 		buffer_index = 1
 		dialog:repaint()
 	end
@@ -107,6 +122,23 @@ function step_frame_buffer()
 	rotate_pixels(bufferImage, frame_buffer[buffer_index], sprite_angle_rad)
 
 	buffer_index = buffer_index + 1
+end
+
+function async_rendering_timer_switch_check()
+	if dialog.data["check_auto_repaint"] == true then
+		async_rendering_timer:start()
+	else
+		async_rendering_timer:stop()
+	end
+end
+
+function frame_buffers_clear()
+	-- Allocate buffers for each layer (frame)
+	frame_buffer = {}
+	for i,frame in ipairs(sprite.frames) do
+		table.insert(frame_buffer, Image(target_widthheight, target_widthheight, ColorMode.RGB))
+	end
+	sprite_frames_cached_count = #sprite.frames
 end
 
 -- Rotate Pixels from ImageA to ImageB
@@ -133,7 +165,10 @@ end
 -- End
 
 function setup_spritestack()
-
+	if app.sprite == nil then
+		return
+	end 
+	
 	if sprite ~= nil then
 		sprite.events:off(ev_dialog_repaint)
 	end
@@ -147,17 +182,14 @@ function setup_spritestack()
 	end
 
 	-- Change bufferedImage size
-	local target_widthheight = math.ceil(math.sqrt(sprite.width*sprite.width + sprite.height*sprite.height))
+	target_widthheight = math.ceil(math.sqrt(sprite.width*sprite.width + sprite.height*sprite.height))
 	rotatedBufferImage:clear()
 	if( rotatedBufferImage.width ~= target_widthheight or rotatedBufferImage.height ~= target_widthheight ) then
 		rotatedBufferImage:resize( target_widthheight, target_widthheight )
 	end
 
 	-- Allocate buffers for each layer (frame)
-	frame_buffer = {}
-	for i,frame in ipairs(sprite.frames) do
-		table.insert(frame_buffer, Image(target_widthheight, target_widthheight, ColorMode.RGB))
-	end
+	frame_buffers_clear()
 
 	-- update dialog elements
 	if dialog.data["slider_frame"] ~= nil then
@@ -168,6 +200,7 @@ function setup_spritestack()
 end
 
 -- Start
+sprite = app.sprite
 setup_spritestack()
 
 -- Canvas
@@ -233,7 +266,7 @@ dialog
 		if gc.width ~= canvas_w or gc.height ~= canvas_h then
 			canvas_w = gc.width
 			canvas_h = gc.height
-			size_changing = true
+			--size_changing = true
 			zoom_changed()
 		end
 		
@@ -260,6 +293,20 @@ dialog
 		gc.color = Color(255, 255, 255, 255)
 		-- End Draw RoundRect Zone
 		
+		-- No sprite tab
+		if sprite == nil then
+			local nosprite_text = "NO SPRITE"
+			local tsize = gc:measureText(nosprite_text)
+			gc:fillText(nosprite_text, canvas_w/2 - tsize.width/2, canvas_h/2 - tsize.height/2)
+		else
+		-- Sprite != null
+			if size_changing == false then
+				draw_spritestack(gc)
+			end
+		end
+	end
+}
+function draw_spritestack(gc)
 		-- Draw SpriteStack:
 		-- Height divide control
 		local height_modify = 1.0
@@ -288,15 +335,20 @@ dialog
 				gc:drawImage(rotatedBufferImage, rotatedSpriteImageRect, Rectangle(position_x, position_y - frame_index*size_modify*sprite_fakez_distance + j, rotatedImageDisplayWidth, rotatedImageDisplayHeight))
 			end
 		end
-		if size_changing == false then
+		
 		-- Draw one Slice (Frame)
 		if dialog.data["check_only_one_slice"] then
 			local frame_index = app.frame.frameNumber -- dialog.data["slider_frame"]
 			draw_sprite_on_canvas(frame_index)
 		else
 			if async_rendering_timer.isRunning then
+				-- Frames(layers) count changes
+				if #sprite.frames ~= sprite_frames_cached_count then
+					frame_buffers_clear()
+				end
+				
 				-- Copy frame buffer onto canvas
-				for i,frame in ipairs(sprite.frames) do
+				for i,image in ipairs(frame_buffer) do --sprite.frames) do
 					for j=sprite_slice_depth, 0, -1 do 
 						gc:drawImage(
 							frame_buffer[i], 
@@ -315,9 +367,7 @@ dialog
 				end
 			end
 		end
-		end -- size_changing
-	end
-}
+end
 
 -- Get calculated size of Sprite with zoom
 function get_zoomed_scale()
@@ -344,10 +394,10 @@ end
 
 -- Change Sprite angle
 function change_sprite_angle( angle_deg )
-	sprite_angle_deg = math.floor(math.fmod(angle_deg + 360, 360))
+	sprite_angle_deg = math.fmod(angle_deg + 360, 360)
 	sprite_angle_rad = math.rad(sprite_angle_deg)
 	dialog:modify{ id = "slider_angle", value = sprite_angle_deg }
-	-- dialog:repaint()
+	dialog:repaint()
 end
 
 -- UI Elements Declaration
@@ -365,7 +415,6 @@ dialog
     visible = true,
     onchange = function()
 		change_sprite_angle(dialog.data["slider_angle"])
-		dialog:repaint()
 	end
 }
 dialog
@@ -405,6 +454,9 @@ dialog
 	selected=false,
 	onclick=function()
 		dialog:modify{id="slider_frame", enabled = dialog.data["check_only_one_slice"]}
+		if app.frame ~= nil then
+			dialog:modify{id="slider_frame", max = #sprite.frames, value = app.frame.frameNumber }
+		end
 		dialog:repaint()
 	end
 }
@@ -509,14 +561,8 @@ dialog
 dialog
 :check{ id="check_auto_repaint",
 	text="Auto-Repaint",
-	selected=false,
-	onclick=function(v)
-		if dialog.data["check_auto_repaint"] == true then
-			async_rendering_timer:start()
-		else
-			async_rendering_timer:stop()
-		end
-	end
+	selected=true,
+	onclick = async_rendering_timer_switch_check
 }
 
 -- Async rendering timer
@@ -527,6 +573,8 @@ Timer{
 		step_frame_buffer()
 	end
 }
+async_rendering_timer_switch_check()
+
 dialog
 :button{
 	id = "button_update",
@@ -552,24 +600,25 @@ Timer{
 	interval = sprite_rotate_animation_interval,
 	ontick = function()
 		change_sprite_angle(sprite_angle_deg + sprite_angle_speed)
-		dialog:repaint()
 	end}
 -- End Rotation Timer
 
 -- EVENTS pt2
-local oldSprite = app.sprite
-
 function ev_sitechange_on(ev)
 	if app.frame ~= nil then
 		dialog:modify{id="slider_frame", value = app.frame.frameNumber}
 	end
 	
-	if app.sprite ~= oldSprite then
+	if app.sprite ~= sprite then
 		-- print("Sprite changed")
 		setup_spritestack()
-		dialog:repaint()
-		oldSprite = app.sprite
+		sprite = app.sprite
+		if sprite ~= nil then 
+			app.sprite.events:on('change',ev_sprite_changed)
+		end
 	end
+
+	dialog:repaint()
 end
 
 function events_on()
