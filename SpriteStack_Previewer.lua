@@ -1,6 +1,7 @@
 ----------------------------------------------------------------------
 -- Sprite Stack Viewer by DarkDes
 
+-- v040 -- 23 12 2023, Canvas separation
 -- v037 -- 17 12 2023, Bugfixes: minor fixes, home tab error, change frames count
 -- v036 -- 13 12 2023, Clean up code 1, sprite change angle func.
 -- v035 -- 13 12 2023, Feature requests #1: Offset+drag, Zoom, Rotation speed, Preview size
@@ -31,8 +32,8 @@ end
 
 -- EVENTS pt1
 function ev_dialog_repaint(ev)
-	if dialog ~= nil and dialog.data["check_auto_repaint"] then
-		dialog:repaint()
+	if current_canvas_dialog ~= nil and dialog ~= nil and dialog.data["check_auto_repaint"] then
+		dialog_canvas_repaint()
 	end
 end
 
@@ -50,11 +51,24 @@ function events_off()
 	
 	angle_animation_timer:stop()
 	async_rendering_timer:stop()
+	
+	if dialog_canvas ~= nil then
+		dialog_canvas:close()
+	end
 end
 -- End EVENTS pt1
 
 -- DIALOG OBJECT
 local dialog = Dialog{title = "SpriteStack Previewer", onclose=events_off}
+local dialog_canvas = Dialog{title = "SpriteStack CANVAS"}
+local current_canvas_dialog = dialog
+local dialog_sepcanvas_enabled = false
+local canvas_mini_button_enabled = false
+
+function dialog_canvas_repaint()
+	current_canvas_dialog:repaint()
+end
+
 local mouse = {position = Point(0, 0), drag_position = Point(0,0), leftClick = false}
 local mouse_right = { delta = Point(0,0), position = Point(0,0), click = false }
 
@@ -112,7 +126,7 @@ function step_frame_buffer()
 	-- if buffer_index > #sprite.frames then
 	if buffer_index > sprite_frames_cached_count then
 		buffer_index = 1
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 	
 	-- Draw Sprite to Buffer Image
@@ -196,32 +210,54 @@ function setup_spritestack()
 		dialog:modify{id="slider_frame", max = #sprite.frames, value = app.frame }
 	end
 	
-	dialog:repaint()
+	dialog_canvas_repaint()
 end
 
 -- Start
 sprite = app.sprite
 setup_spritestack()
 
--- Canvas
-dialog
-:canvas{
-	id = "canvas",
-	width = canvas_w,
-	height = canvas_h,
-	hexpand = true,
-	vexpand = true,
+
+function select_canvas(separate_canvas_dialog)
+	dialog_sepcanvas_enabled = separate_canvas_dialog
 	
+	if dialog_sepcanvas_enabled then
+		dialog_canvas:show{ wait=false } 				-- show dialog with big canvas
+		dialog:modify{id = "canvas", visible = false } 	-- hide original canvas
+		current_canvas_dialog = dialog_canvas -- set current active canvas
+	else
+		dialog:modify{id = "canvas", visible = true }
+		dialog_canvas:close()
+		current_canvas_dialog = dialog -- set current active canvas
+	end
+	
+	mouse.leftClick = false
+	dialog_canvas_repaint()
+end
+
+function switch_canvas()
+	dialog_sepcanvas_enabled = not dialog_sepcanvas_enabled
+	select_canvas(dialog_sepcanvas_enabled)
+end
+
+-- Canvas Functions
 	-- Update information about left mouse button being pressed
-	onmousedown = function(ev)
+function dcanv_onmousedown(ev)
 		mouse.leftClick = ev.button == MouseButton.LEFT
 		mouse.drag_position = Point(ev.x, ev.y)
 		mouse.old_angle = sprite_angle_deg
 
 		if ev.button == MouseButton.RIGHT then mouse_right.position = Point(ev.x, ev.y) end
-	end,
+		
+		-- Virtual Button: Click on bottom right corner of canvas
+		if canvas_mini_button_enabled then
+			if ev.button == MouseButton.LEFT and ev.x > canvas_w-12 and ev.y > canvas_h-12 then
+				switch_canvas()
+			end
+		end
+end
 	-- Update the mouse position
-	onmousemove = function(ev)
+function dcanv_onmousemove(ev)
 		mouse.position = Point(ev.x, ev.y)
 		if mouse.leftClick then
 			-- New angle value
@@ -240,27 +276,30 @@ dialog
 			dialog:modify{ id = "slider_shift_x", value = px }
 			dialog:modify{ id = "slider_shift_y", value = py }
 
-			dialog:repaint()
+			dialog_canvas_repaint()
 		end
-	end,
+		
+end
+
 	-- When releasing left mouse button
-	onmouseup = function(ev)
+function dcanv_onmouseup(ev)
 		if ev.button == MouseButton.LEFT then
 			mouse.leftClick = false
 		end
-	end,
+end
+
 	-- Mouse Wheel. "Let's roll!"
-	onwheel = function(ev)
+function dcanv_onwheel(ev)
 		if ev.deltaY ~= 0 then
 			dialog:modify{ id="size_zoom", value = dialog.data["size_zoom"] + ev.deltaY }
 			zoom_changed()
 		end
-	end,
+end
 	
 	-- Redraw function
-	onpaint = function(ev)
+function dcanv_onpaint(ev)
 		local gc = ev.context
-		
+		gc:save()
 		-- Canvas size changed
 		local size_changing = false
 		if gc.width ~= canvas_w or gc.height ~= canvas_h then
@@ -289,10 +328,9 @@ dialog
 				gc:fillRect(Rectangle(i * size, j*size, size, size))
 			end
 		end
-		gc:restore()
 		gc.color = Color(255, 255, 255, 255)
 		-- End Draw RoundRect Zone
-		
+
 		-- No sprite tab
 		if sprite == nil then
 			local nosprite_text = "NO SPRITE"
@@ -304,8 +342,16 @@ dialog
 				draw_spritestack(gc)
 			end
 		end
-	end
-}
+		
+		
+		gc:restore()
+		
+		-- Draw virtual Button
+		if canvas_mini_button_enabled then
+			gc:drawThemeRect("button_normal", canvas_w-12, canvas_h-12, 12, 12)
+		end
+end
+
 function draw_spritestack(gc)
 		-- Draw SpriteStack:
 		-- Height divide control
@@ -369,6 +415,36 @@ function draw_spritestack(gc)
 		end
 end
 
+-- Canvas
+dialog
+:canvas{
+	id = "canvas",
+	width = canvas_w,
+	height = canvas_h,
+	hexpand = true,
+	vexpand = true,
+	onmousedown = dcanv_onmousedown,
+	onmousemove = dcanv_onmousemove,
+	onmouseup 	= dcanv_onmouseup,
+	onwheel 	= dcanv_onwheel,
+	onpaint 	= dcanv_onpaint
+}
+
+-- A separate dialog for Canvas.
+dialog_canvas
+:canvas{
+	id = "canvas",
+	width = canvas_w,
+	height = canvas_h,
+	hexpand = true,
+	vexpand = true,
+	onmousedown = dcanv_onmousedown,
+	onmousemove = dcanv_onmousemove,
+	onmouseup 	= dcanv_onmouseup,
+	onwheel 	= dcanv_onwheel,
+	onpaint 	= dcanv_onpaint
+}
+
 -- Get calculated size of Sprite with zoom
 function get_zoomed_scale()
 	local size_modify = 1
@@ -389,7 +465,7 @@ function zoom_changed()
 	
 	dialog:modify{id="slider_shift_x", 	min = shift_min_x, max = shift_max_x, value = val_x }
 	dialog:modify{id="slider_shift_y", 	min = shift_min_y, max = shift_max_y, value = val_y }
-	dialog:repaint()
+	dialog_canvas_repaint()
 end
 
 -- Change Sprite angle
@@ -397,10 +473,17 @@ function change_sprite_angle( angle_deg )
 	sprite_angle_deg = math.fmod(angle_deg + 360, 360)
 	sprite_angle_rad = math.rad(sprite_angle_deg)
 	dialog:modify{ id = "slider_angle", value = sprite_angle_deg }
-	dialog:repaint()
+	dialog_canvas_repaint()
 end
 
 -- UI Elements Declaration
+dialog
+:button{
+	id = "canvas_show_btn",
+	text = "CANVAS",
+	onclick = switch_canvas
+}
+
 dialog
 :separator{
 	id = "sep_angle",
@@ -457,7 +540,7 @@ dialog
 		if app.frame ~= nil then
 			dialog:modify{id="slider_frame", max = #sprite.frames, value = app.frame.frameNumber }
 		end
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 :slider{
@@ -470,7 +553,7 @@ dialog
 	enabled = false,
 	onchange = function() 
 		app.frame = dialog.data["slider_frame"]
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 
@@ -488,7 +571,7 @@ dialog
 	visible = true,
 	onchange = function() 
 		sprite_fakez_distance = dialog.data["slider_fakez"]
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 dialog
@@ -496,7 +579,7 @@ dialog
 	text="Draw slice as solid block",
 	selected=false,
 	onclick=function()
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 dialog:newrow()
@@ -505,7 +588,7 @@ dialog
 	text="Half Sprite Height",
 	selected=false,
 	onclick=function()
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end }
 dialog:newrow()
 dialog
@@ -539,7 +622,7 @@ dialog
 	max = canvas_w/2,
 	value = 0,
 	onchange = function() 
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 dialog
@@ -549,7 +632,7 @@ dialog
 	max = canvas_h/2,
 	value = 0,
 	onchange = function() 
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 
@@ -581,7 +664,7 @@ dialog
 	text = "UPDATE",
 	onclick = function()
 		setup_spritestack()
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 dialog
@@ -589,7 +672,7 @@ dialog
 	id = "button_repaint",
 	text = "REPAINT",
 	onclick = function()
-		dialog:repaint()
+		dialog_canvas_repaint()
 	end
 }
 -- End UI Elements Declaration
@@ -618,7 +701,7 @@ function ev_sitechange_on(ev)
 		end
 	end
 
-	dialog:repaint()
+	dialog_canvas_repaint()
 end
 
 function events_on()
@@ -631,3 +714,9 @@ events_on()
 
 -- Show Sprite Stack Visualizer
 dialog:show{ wait=false }
+
+-- Canvas Init
+select_canvas(false)
+dialog_canvas_repaint()
+
+-- End of file
