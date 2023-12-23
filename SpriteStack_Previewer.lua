@@ -93,7 +93,8 @@ local sprite_fill_distance_slices = true
 -- Images 
 local bufferImage = Image(1, 1, ColorMode.RGB) -- Contains a image of frame (Sprite)
 local rotatedBufferImage = Image(1, 1, ColorMode.RGB) -- Contains a rotated image of Sprite (bufferImage)
-local target_widthheight = 1
+local target_width = 1
+local target_height = 1
 
 local redraw_required = true
 
@@ -150,7 +151,7 @@ function frame_buffers_clear()
 	-- Allocate buffers for each layer (frame)
 	frame_buffer = {}
 	for i,frame in ipairs(sprite.frames) do
-		table.insert(frame_buffer, Image(target_widthheight, target_widthheight, ColorMode.RGB))
+		table.insert(frame_buffer, Image(target_width, target_height, ColorMode.RGB))
 	end
 	sprite_frames_cached_count = #sprite.frames
 end
@@ -196,11 +197,7 @@ function setup_spritestack()
 	end
 
 	-- Change bufferedImage size
-	target_widthheight = math.ceil(math.sqrt(sprite.width*sprite.width + sprite.height*sprite.height))
-	rotatedBufferImage:clear()
-	if( rotatedBufferImage.width ~= target_widthheight or rotatedBufferImage.height ~= target_widthheight ) then
-		rotatedBufferImage:resize( target_widthheight, target_widthheight )
-	end
+	rotatedbufferimage_recalculate_target_size()
 
 	-- Allocate buffers for each layer (frame)
 	frame_buffers_clear()
@@ -211,6 +208,18 @@ function setup_spritestack()
 	end
 	
 	dialog_canvas_repaint()
+end
+
+function rotatedbufferimage_recalculate_target_size()
+	-- Change bufferedImage size
+	local stacked_height = #sprite.frames * sprite_fakez_distance + 1
+	target_width = math.ceil(math.sqrt(sprite.width*sprite.width + sprite.height*sprite.height))
+	target_height = target_width + stacked_height
+	
+	rotatedBufferImage:clear()
+	if( rotatedBufferImage.width ~= target_width or rotatedBufferImage.height ~= target_height ) then
+		rotatedBufferImage:resize( target_width, target_height )
+	end
 end
 
 -- Start
@@ -482,6 +491,87 @@ dialog
 	id = "canvas_show_btn",
 	text = "CANVAS",
 	onclick = switch_canvas
+}
+
+-- Export Preview Canvas as Sprite
+dialog
+:button{
+	id = "export_btn",
+	text = "Export",
+	onclick = function()
+		local export_data = Dialog("Export as new Sprite")
+			:label{ text = "Warning! This can take a long time! Be patient!" }
+			:slider{ id="directions", label="Directions", min=1, max=360, value=8 }
+			:check{ id="start_from_zero", label="Start from 0 angle" }
+			:check{ id="use_height_modify", label="Use Height Modifier" }
+			:button{ id="confirm", text="Confirm" }
+			:button{ id="cancel", text="Cancel" }
+			:show().data
+
+		-- Press "Ok, do what you gotta do! Export!"
+		if export_data.confirm then
+			local angle_step = 360.0 / export_data.directions
+			local angle = sprite_angle_deg
+			if export_data.start_from_zero then angle = 0 end
+			
+			-- Recalculate Buffered image size
+			rotatedbufferimage_recalculate_target_size()
+			
+			-- Settings
+			local height_modify = 1.0
+			if export_data.use_height_modify and dialog.data["check_divy"] then height_modify = 0.5 end
+			local rotatedImageDisplayWidth 	= rotatedBufferImage.width
+			local rotatedImageDisplayHeight = rotatedBufferImage.height
+			local position_x 				= 0
+			local position_y 				= #sprite.frames * sprite_fakez_distance / 2
+			local sprite_slice_depth = 0
+			if dialog.data["check_solid_zsteps"] then sprite_slice_depth = sprite_fakez_distance end
+			
+			-- Cached images
+			local sprite_images = {}
+			for i=1, export_data.directions do
+				table.insert(sprite_images, Image(rotatedImageDisplayWidth, rotatedImageDisplayHeight, ColorMode.RGB))
+			end
+			
+			local exportBufferImage = Image(sprite.width, sprite.height, ColorMode.RGB)
+			local img
+			
+			-- For each angle make new image (rendered sprite stack)
+			for direction=1, export_data.directions do
+			-- Get SpriteStack "Rendered" image
+				-- Original slow drawing:
+				img = sprite_images[direction]
+				img:clear()
+					-- Each FRAME (Slice) draw ...
+					for frame_index,frame in ipairs(sprite.frames) do
+						-- Draw Sprite to Buffer Image
+						exportBufferImage:drawSprite(sprite, frame_index)
+						-- Draw rotated pixels from Buffer Image to Rotate Image (Buffer2)
+						rotate_pixels(exportBufferImage, rotatedBufferImage, math.rad(angle))
+						-- Draw Rotated Image Depth times for block-like look
+						for j=sprite_slice_depth, 0, -1 do 
+							img:drawImage(rotatedBufferImage, Point(position_x, position_y - frame_index*sprite_fakez_distance + j))
+						end
+					end
+				angle = math.fmod(angle + angle_step, 360)
+			-- End rendering
+			end -- for direction loop
+
+			-- Create new sprite
+			local newSprite = Sprite(rotatedImageDisplayWidth, rotatedImageDisplayHeight, ColorMode.RGB)
+			-- Prepare new frames and cells
+			while #newSprite.frames < #sprite_images do
+				newSprite:newEmptyFrame()
+			end
+			
+			-- Set images to frames\cels
+			for index,frame in ipairs(newSprite.frames) do
+				local image = sprite_images[index]
+				local cel = newSprite:newCel(newSprite.layers[1], frame, image, Point(0,0))
+				-- cel.image:drawPixel(1,1, Color{ r=255, g=0, b=0} ) -- Marker
+			end
+		end -- confirm
+	end
 }
 
 dialog
