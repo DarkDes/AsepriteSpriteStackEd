@@ -1,6 +1,7 @@
 ----------------------------------------------------------------------
 -- Sprite Stack Viewer by DarkDes
 
+-- v050 -- 13 02 2024, Canvas Export rotate animation
 -- v040 -- 23 12 2023, Canvas separation
 -- v037 -- 17 12 2023, Bugfixes: minor fixes, home tab error, change frames count
 -- v036 -- 13 12 2023, Clean up code 1, sprite change angle func.
@@ -741,7 +742,7 @@ dialog
 -- Async rendering timer
 async_rendering_timer =
 Timer{
-	interval=0.0,
+	interval=1.0/60.0,
 	ontick = function()
 		step_frame_buffer()
 	end
@@ -787,7 +788,7 @@ function ev_sitechange_on(ev)
 		setup_spritestack()
 		sprite = app.sprite
 		if sprite ~= nil then 
-			app.sprite.events:on('change',ev_sprite_changed)
+			app.sprite.events:on('change',ev_dialog_repaint)
 		end
 	end
 
