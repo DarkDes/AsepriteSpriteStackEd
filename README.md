@@ -22,14 +22,17 @@ Features:
 This script DOES NOT create a SpriteStack, it is just a preview that affects the convenience of creating such sprites.
 
 You can detach the preview-canvas from the script window.
-Current view of the running script: 
+Current view of the running script:
+
 ![Preview-Image](./docs/version_2024-02-13.png)
 
 Exported sprite from preview-canvas:
+
 ![gif-4](./docs/canvas_export.gif)
 
 (Old version gif's)
-![gif 1](./docs/rotate.gif) ![gif 2](./docs/slices.gif) ![gif 3](./docs/distance_height.gif)
+
+![gif 1](./docs/rotate.gif) ![gif 2](./docs/slices.gif)
 
 ### SpriteStack Slicer
 Creates a new sprite based on a flat sprite image by slicing it along vertical lines.
