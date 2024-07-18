@@ -1,6 +1,7 @@
 ----------------------------------------------------------------------
 -- Sprite Stack Viewer by DarkDes
 
+-- v051 -- 18 07 2024, Export. Half Height modifier
 -- v050 -- 13 02 2024, Canvas Export rotate animation
 -- v040 -- 23 12 2023, Canvas separation
 -- v037 -- 17 12 2023, Bugfixes: minor fixes, home tab error, change frames count
@@ -175,6 +176,29 @@ function rotate_pixels(image_a, image_b, angle_radians)
 		if newpoint.x < image_a.width and newpoint.y < image_a.height and newpoint.x >= 0 and newpoint.y >= 0 then
 			local pixelValue = image_a:getPixel(newpoint.x, newpoint.y)
 			image_b:drawPixel(it.x, it.y, pixelValue)
+		end
+	end
+end
+-- End
+
+-- Rotate Pixels from ImageA to ImageB, with height scale 
+function rotate_pixels_height_scale(image_a, image_b, angle_radians, height_scale)
+	local pivotx = image_b.width / 2
+	local pivoty = image_b.height / 2
+	local shiftx = image_a.width / 2
+	local shifty = image_a.height / 2
+	
+	image_b:clear()
+	local maskColor = image_a.spec.transparentColor
+	for it in image_b:pixels() do
+		local newpoint = rotate_point( pivotx, pivoty, angle_radians, it.x, it.y )
+		newpoint.x = newpoint.x - pivotx + shiftx
+		newpoint.y = newpoint.y - pivoty + shifty
+		
+		--if image_a.bounds.contains(Rectangle(newpoint.x,newpoint.y,1,1)) then --
+		if newpoint.x < image_a.width and newpoint.y < image_a.height and newpoint.x >= 0 and newpoint.y >= 0 then
+			local pixelValue = image_a:getPixel(newpoint.x, newpoint.y)
+			image_b:drawPixel(it.x, it.y*height_scale + pivoty * (1-height_scale), pixelValue)
 		end
 	end
 end
@@ -547,8 +571,10 @@ dialog
 					for frame_index,frame in ipairs(sprite.frames) do
 						-- Draw Sprite to Buffer Image
 						exportBufferImage:drawSprite(sprite, frame_index)
+						
 						-- Draw rotated pixels from Buffer Image to Rotate Image (Buffer2)
-						rotate_pixels(exportBufferImage, rotatedBufferImage, math.rad(angle))
+						rotate_pixels_height_scale(exportBufferImage, rotatedBufferImage, math.rad(angle), height_modify)
+						
 						-- Draw Rotated Image Depth times for block-like look
 						for j=sprite_slice_depth, 0, -1 do 
 							img:drawImage(rotatedBufferImage, Point(position_x, position_y - frame_index*sprite_fakez_distance + j))
